@@ -1,3 +1,16 @@
-python
-pip
+# -e git+git://github.com/RichardPienaar/moviepy.git@master#egg=moviepy
+# python
+# pip
 ffmpeg
+scipy>=1.11.4
+tinytag>=1.10.1
+moviepy>=1.0.3
+click>=8.1.7
+opencv-python>=4.8.1.78
+pexels-api-py>=0.0.5
+pixabay>=0.0.5
+requests>=2.31.0
+tqdm>=4.66.1
+numba>=0.58.1
+numpy>=1.26.2
+librosa>=0.10.1
