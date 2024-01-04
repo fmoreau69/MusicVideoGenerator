@@ -7,24 +7,40 @@ import random, math, os, sys
 Dynamic video generation - Intense sections of music will have faster visuals
 '''
 
-HIGH_INTENSITY = [1,1,1,4,4,4]
-MEDIUM_INTENSITY = [4,4,4,4,8,8,8,16]
-LOW_INTENSITY = [8,8,8,16,16,16,16]
+HIGH_INTENSITY = [1, 1, 1, 4, 4, 4]
+MEDIUM_INTENSITY = [4, 4, 4, 4, 8, 8, 8, 16]
+LOW_INTENSITY = [8, 8, 8, 16, 16, 16, 16]
 
 
-def make_subMovie(filename, bpm, videos_list, output, start, finish, duration, intensities):
-    # time between beats
-    length_of_a_beat = 1 / (bpm / 60)
+def make_sub_movie(music_file_path, bpm, videos_list, idx, start, finish, duration, intensities, resolution):
+    """
+    Saves a simple movie synced to the provided audio file
 
+    music_file_path (str): path to song (.wav)
+    bpm (int / float): beats per minute tempo of the song
+    videos_list (list): videos to use
+    idx (int): video index
+
+    start: first downbeat
+    finish: last downbeat
+    duration: total duration
+    resolution: desired output resolution (ex: 1080 or 720)
+    """
+
+    filename = str(music_file_path.split(os.sep)[-1:])
+    main_folder = os.path.join(*music_file_path.split(os.sep)[:-2])
+    titles_path = os.path.join(str(main_folder), 'titles' + os.sep)
+    temp_path = os.path.join(str(main_folder), 'temp' + os.sep)
+    length_of_a_beat = 1 / (bpm / 60)  # time between beats
     videos = []
 
     # black screen on start
     if 0 < start < 4:
-        videos.append(VideoFileClip("titles/"+random.choice([x for x in os.listdir("titles/")])).subclip(0,start).fx(vfx.colorx, 0.0))
+        videos.append(VideoFileClip(titles_path + random.choice([x for x in os.listdir(titles_path)])).subclip(0, start).fx(vfx.colorx, 0.0))
     
     # ambient intro on start
     elif start > 0:
-        clip = VideoFileClip("titles/"+random.choice([x for x in os.listdir("titles/")])).subclip(0,start)
+        clip = VideoFileClip(titles_path + random.choice([x for x in os.listdir(titles_path)])).subclip(0, start)
         videos.append(clip.fx(vfx.fadein, duration=clip.duration/2))
 
     new4_bar_block = True  # outlines every 4 bars to switch up speeds
@@ -34,7 +50,7 @@ def make_subMovie(filename, bpm, videos_list, output, start, finish, duration, i
 
     current_render_percent = 0  # used to print progress to console
     
-    print("Generating video " + str(output+1))
+    print("Generating video " + str(idx + 1))
 
     while beats < (len(intensities) * 16):
 
@@ -54,7 +70,7 @@ def make_subMovie(filename, bpm, videos_list, output, start, finish, duration, i
                 i = random.choice(MEDIUM_INTENSITY)
             else: 
                 try:
-                    if intensities[current4_bar_block + 1] == "High": # check next section is a "drop"
+                    if intensities[current4_bar_block + 1] == "High":  # check next section is a "drop"
                         i = 16
                         fade_out = True
                     else:
@@ -83,26 +99,27 @@ def make_subMovie(filename, bpm, videos_list, output, start, finish, duration, i
         beats += i
         
         # print progress to screen
-        percent_rendered = get_closest_percent((beats / (len(intensities)*16) * 100))
+        percent_rendered = get_closest_percent((beats / (len(intensities) * 16) * 100))
         if percent_rendered != current_render_percent:
             current_render_percent = percent_rendered
-            print(str(current_render_percent)+ "%/ rendered")
+            print(str(current_render_percent) + "%/ rendered")
        
         new4_bar_block = False
     
     # Ambient outro
     if start < duration:
-        clip = VideoFileClip("titles/" + random.choice([x for x in os.listdir("titles/")])).subclip(0, duration-start)
+        clip = VideoFileClip(titles_path + random.choice([x for x in os.listdir(titles_path)])).subclip(0, duration-start)
         videos.append(clip.fx(vfx.fadeout, duration=clip.duration/2))
 
     final_clip = concatenate_videoclips(videos, method="compose")
     
-    if final_clip.size == (1280,720):
+    width, height = int(int(resolution) * (16 / 9)), int(resolution)
+    if final_clip.size == (width, height):
         # write video
-        final_clip.write_videofile(filename="temp/small" + str(filename) + str(output)+".mp4", preset="ultrafast", threads=6, audio=False)
+        final_clip.write_videofile(filename=temp_path + filename + str(idx) + "_resized.mp4", preset="ultrafast", threads=6, audio=False)
     else:
         # name output differently to denote not yet 720p
-        final_clip.write_videofile(filename="temp/" + str(filename) + str(output)+".mp4", preset="ultrafast", threads=6, audio=False)
+        final_clip.write_videofile(filename=temp_path + filename + str(idx) + ".mp4", preset="ultrafast", threads=6, audio=False)
 
     # memory save
     for v in videos:
@@ -111,19 +128,21 @@ def make_subMovie(filename, bpm, videos_list, output, start, finish, duration, i
 
 
 def main(argv):
-
-    videos_list = preload()
+    music_file_path = argv[0]
+    bpm = argv[1]
+    complexity = argv[2]
+    resolution = argv[3]
 
     print("Analysing waveform")
-    start, finish = guess_first_and_last_DownBeat("music/" + argv[0])
-    duration = get_duration("music/" + argv[0])
-    
-    bpm = argv[1]
+    start, finish = guess_first_and_last_down_beat(music_file_path)
+    duration = get_duration(music_file_path)
+    intensities = get_intensities(music_file_path, bpm)
 
-    intensities = get_intensities("music/" + argv[0],int(bpm))
-
-    for i in range(int(argv[2])):
-        make_subMovie(argv[0], int(bpm), videos_list, i, start, finish, duration, intensities)
+    main_folder = os.path.join(*music_file_path.split(os.sep)[:-2])
+    videos_path = os.path.join(str(main_folder), 'videos' + os.sep)
+    videos_list = preload(videos_path, resolution)
+    for idx in range(int(complexity)):
+        make_sub_movie(music_file_path, round(float(bpm)), videos_list, idx, start, finish, duration, intensities, resolution)
 
 
 if __name__ == "__main__":
