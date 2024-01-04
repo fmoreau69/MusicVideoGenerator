@@ -1,9 +1,9 @@
-import os, sys, csv
-import numpy as np
+import sys
+import csv
 import librosa
 
 from tinytag import TinyTag
-from scipy.io.wavfile import read, write
+from scipy.io.wavfile import read
 
 
 def get_duration(music_file_path):
@@ -22,6 +22,7 @@ def guess_first_and_last_down_beat(music_file_path):
     fs, data = read(music_file_path)
     data = data[:, 0]  # one stereo channel for ease
     highest_db = max(data)
+    count, count2 = 0, 0
 
     # find first downbeat
     for count, point in enumerate(data):
@@ -35,7 +36,7 @@ def guess_first_and_last_down_beat(music_file_path):
 
     duration = get_duration(music_file_path)
 
-    return ((count / len(data)) * duration, ((len(data) - count2) / len(data)) * duration)
+    return (count / len(data)) * duration, ((len(data) - count2) / len(data)) * duration
 
 
 def get_timestamps(music_file_path, bpm):
@@ -48,10 +49,8 @@ def get_timestamps(music_file_path, bpm):
 
     # estimated guess of first and last beat in song
     start, finish = guess_first_and_last_down_beat(music_file_path)
-
-    timestamps = [start]
-
     length_of_a_beat = 1 / (bpm / 60)
+    timestamps = [start]
 
     while start < finish:
         timestamps.append(start + length_of_a_beat * 16)
@@ -65,16 +64,14 @@ def get_counts_in_4_bars(music_file_path, bpm):
     returns the number of data points in 4 bars of a file for downstream works
     """
 
-    length_of_a_beat = 1 / (float(bpm) / 60)
-    length_of_16_beats = length_of_a_beat * 16  # 4 bars
-
-    Fs, data = read(music_file_path)
-
-    # one stereo channel for ease
-    data = data[:, 0]
+    fs, data = read(music_file_path)
+    data = data[:, 0]  # one stereo channel for ease
 
     length = len(data)
     duration = get_duration(music_file_path)
+
+    length_of_a_beat = 1 / (float(bpm) / 60)
+    length_of_16_beats = length_of_a_beat * 16  # 4 bars
 
     # find how many counts in 16 beats
     for count, point in enumerate(data):
@@ -96,7 +93,7 @@ def get_intensities(music_file_path, bpm):
     intensities = {}
 
     # analyse waveform
-    Fs, data = read(music_file_path)
+    fs, data = read(music_file_path)
 
     # one stereo channel for ease
     data = data[:, 0]
@@ -105,10 +102,10 @@ def get_intensities(music_file_path, bpm):
 
     count_ = 0
     sum_ = float(0)
-    barBlock = 0  # current index of 4 bar block
+    bar_block = 0  # current index of 4 bar block
 
     for count, point in enumerate(data):
-        if count / length >= start / duration and count / length <= finish / duration:  # only calculate between first and last downbeat
+        if start / duration <= count / length <= finish / duration:  # only calculate between first and last downbeat
 
             count_ += 1
             sum_ += float(abs(point))  # absolute value because deviation from 0 (no volume) is what is important
@@ -118,11 +115,11 @@ def get_intensities(music_file_path, bpm):
 
             # calculate and save average every 4 bars
             if count_ >= counts_in_4_bars:
-                intensities[barBlock] = sum_ / count_
+                intensities[bar_block] = sum_ / count_
 
                 count_ = 0
                 sum_ = float(0)
-                barBlock += 1
+                bar_block += 1
 
     max_average_value = max(intensities.values())
 
@@ -166,11 +163,11 @@ def guess_bpm(music_file_path):
     Reads a .wav file and returns an estimate of the bpm, If bpm is known it should be entered manually for best results
     """
 
-    print('Estimating tempo of {}'.format(music_file_path))
+    # print('Estimating tempo of "{}"'.format(music_file_path))
     y, sr = librosa.load(music_file_path)
     onset_env = librosa.onset.onset_strength(y=y, sr=sr)
     tempo = librosa.feature.tempo(onset_envelope=onset_env, sr=sr)
-    print('Estimated tempo of {}'.format(music_file_path) + ' = ' + str(tempo[0]))
+    print('Estimated tempo of "{}"'.format(music_file_path) + ' = ' + str(tempo[0]))
     return tempo[0]
 
 
