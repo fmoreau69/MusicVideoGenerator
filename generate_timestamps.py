@@ -1,3 +1,4 @@
+import os
 import sys
 import csv
 import librosa
@@ -6,7 +7,7 @@ from tinytag import TinyTag
 from scipy.io.wavfile import read
 
 
-def get_duration(music_file_path):
+def get_duration(music_file_path: str):
     """
     reads song metadata ard returns duration
     """
@@ -14,7 +15,7 @@ def get_duration(music_file_path):
     return TinyTag.get(music_file_path).duration
 
 
-def guess_first_and_last_down_beat(music_file_path):
+def guess_first_and_last_down_beat(music_file_path: str):
     """
     Reads a .wav audio file (str) and guesses the timestamp of first and last downbeats (float,float) in seconds
     """
@@ -39,7 +40,7 @@ def guess_first_and_last_down_beat(music_file_path):
     return (count / len(data)) * duration, ((len(data) - count2) / len(data)) * duration
 
 
-def get_timestamps(music_file_path, bpm):
+def get_timestamps(music_file_path: str, bpm: float):
     """
     Returns a list [float, float, ...] of the timestamps of all the 4 bar regions in the song
 
@@ -59,7 +60,7 @@ def get_timestamps(music_file_path, bpm):
     return timestamps
 
 
-def get_counts_in_4_bars(music_file_path, bpm):
+def get_counts_in_4_bars(music_file_path: str, bpm: float):
     """
     returns the number of data points in 4 bars of a file for downstream works
     """
@@ -70,7 +71,7 @@ def get_counts_in_4_bars(music_file_path, bpm):
     length = len(data)
     duration = get_duration(music_file_path)
 
-    length_of_a_beat = 1 / (float(bpm) / 60)
+    length_of_a_beat = 1 / (bpm / 60)
     length_of_16_beats = length_of_a_beat * 16  # 4 bars
 
     # find how many counts in 16 beats
@@ -79,7 +80,7 @@ def get_counts_in_4_bars(music_file_path, bpm):
             return count
 
 
-def get_intensities(music_file_path, bpm):
+def get_intensities(music_file_path: str, bpm: float):
     """
     Returns {4barCount(int):intensity(str)} for each 4 bar segment in the given .wav file
 
@@ -135,7 +136,7 @@ def get_intensities(music_file_path, bpm):
     return intensities
 
 
-def save_intensities(intensities, music_file_path):
+def save_intensities(music_file_path: str, intensities: dict):
     """
     Saves intensities from get_intensities(filename, bpm) as .csv
     """
@@ -158,17 +159,16 @@ def save_intensities(intensities, music_file_path):
         file.close()
 
 
-def guess_bpm(music_file_path):
+def guess_bpm(music_file_path: str):
     """
     Reads a .wav file and returns an estimate of the bpm, If bpm is known it should be entered manually for best results
     """
 
-    # print('Estimating tempo of "{}"'.format(music_file_path))
     y, sr = librosa.load(music_file_path)
     onset_env = librosa.onset.onset_strength(y=y, sr=sr)
-    tempo = librosa.feature.tempo(onset_envelope=onset_env, sr=sr)
-    print('Estimated tempo of "{}"'.format(music_file_path) + ' = ' + str(tempo[0]))
-    return tempo[0]
+    tempo = round(librosa.feature.tempo(onset_envelope=onset_env, sr=sr)[0], 1)
+    print('Estimated tempo of "{}"'.format(str(music_file_path.split(os.sep)[-1])) + ' = ' + str(tempo))
+    return tempo
 
 
 def main(argv):
@@ -178,7 +178,7 @@ def main(argv):
 
     music_file_path = argv[0]
     bpm = argv[1]
-    save_intensities(get_intensities(music_file_path, int(bpm)), music_file_path)
+    save_intensities(music_file_path, get_intensities(music_file_path, bpm))
 
 
 if __name__ == "__main__":

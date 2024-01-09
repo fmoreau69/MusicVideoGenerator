@@ -1,14 +1,30 @@
 import os
 import time
 import argparse
+from os.path import exists, join, splitext
 
-from numba import jit, cuda
 import generate_timestamps
+from make_sub_movies import main as make_sub_movies
 
 # TODO:
-# Add multithread capabilities
-# different time signature support
+# Add multithread capabilities => In progress
 # Integrate video_downloader to automatically download videos based on tags
+# Integrate AI video generation
+# different time signature support
+
+clean_up = False
+CLI_mode = False  # if False => adjust parameters below
+
+complexity = '3'
+dynamic = True
+GPU_accel = True
+output_res = '1080'
+parallel_proc = False
+
+ffmpeg_cmd_in, ffmpeg_cmd_codec = ["ffmpeg -hwaccel cuda -i ", " -c:v h264_nvenc"] if GPU_accel else ["ffmpeg -i ", ""]
+ffmpeg_cmd_opt = " -hide_banner -loglevel warning"
+
+project_folder = 'E:\\FAB_COMPOS\\Video_songs\\Brest2008\\Clip'
 
 
 def music_video_generator(args):
@@ -25,103 +41,98 @@ def music_video_generator(args):
     7. Output video resolution (optional: e.g. 1080 or 720 | default: 1080)
 
     """
-    
+
     start = time.time()
-    
+
     # Generates n(complexity) number of randomized videos
-    if args.dynamic:
-        os.system("python smart_vid.py " + args.music_file_path + " " + args.bpm + " " + args.complexity + " " + args.output_res)
-    else:
-        os.system("python simple_vid.py " + args.music_file_path + " " + args.bpm + " " + args.complexity + " " + args.output_res)
-    
-    # Makes all videos at the same resolution
-    print("making sub videos " + args.output_res + "p")
-    for i in range(int(args.complexity)):
-        temp_input_file = os.path.join(args.temp_path, args.song_name + str(i) + ".mp4")
-        temp_output_file = os.path.join(args.temp_path, args.song_name + str(i) + "_resized.mp4")
-        if not os.path.exists(temp_output_file):
-            print("resizing video" + str(i))
-            width, height = str(int(args.output_res) * (16/9)), args.output_res
-            os.system("ffmpeg -i " + temp_input_file + " -vf scale=" + width + ":" + height +
-                      " -crf 18 -preset medium -tune film " + temp_output_file + " -hide_banner -loglevel warning")
+    last_sub_input_name = splitext(args.music_file_path.split(os.sep)[-1:][0])[0] + '_subVid2.mp4'
+    if not exists(join(args.temp_path, last_sub_input_name)):
+        sub_vid_args = args.music_file_path, float(args.bpm), args.complexity, args.output_res, args.parallel_proc
+        if args.dynamic:
+            os.system("python make_sub_movies.py {0} {1} {2} {3} {4} smart_vid".format(*sub_vid_args)) if CLI_mode \
+                else make_sub_movies([*sub_vid_args, 'smart_vid'])
         else:
-            print("Video" + str(i) + " is already " + args.output_res + "p")
+            os.system("python make_sub_movies.py {0} {1} {2} {3} {4} simple_vid".format(*sub_vid_args)) if CLI_mode \
+                else make_sub_movies([*sub_vid_args, 'simple_vid'])
 
     # Blends all videos
-    if int(args.complexity) == 3:
-        for i in range(int(args.complexity) - 1):
-            print("Blending videos together " + str(i + 1))
-            temp_input_file_1 = os.path.join(args.temp_path, args.song_name + str(i) + "_resized.mp4")
-            temp_input_file_2 = os.path.join(args.temp_path, args.song_name + str(i + 1) + "_resized.mp4")
-            temp_output_file = os.path.join(args.temp_path, args.song_name + str(i) + "_output.mp4")
-            os.system("ffmpeg -i " + temp_input_file_1 + " -i " + temp_input_file_2 +
-                      " -filter_complex blend='difference' " + temp_output_file + " -hide_banner -loglevel warning")
-        
-        print("Mashing those blended videos together")
-        temp_input_file_1 = os.path.join(args.temp_path, args.song_name + "0_output.mp4")
-        temp_input_file_2 = os.path.join(args.temp_path, args.song_name + "1_output.mp4")
-        temp_output_file = os.path.join(args.temp_path, args.song_name + "_generated.mp4")
-        os.system("ffmpeg -i " + temp_input_file_1 + " -i " + temp_input_file_2 +
-                  " -filter_complex blend='difference' " + temp_output_file + " -hide_banner -loglevel warning")
-
-    elif int(args.complexity) == 2:
-        print("Blending")
-        for i in range(int(args.complexity)-1):
-            temp_input_file_1 = os.path.join(args.temp_path, args.song_name + str(i) + "_resized.mp4")
-            temp_input_file_2 = os.path.join(args.temp_path, args.song_name + str(i + 1) + "_resized.mp4")
-            temp_output_file = os.path.join(args.temp_path, args.song_name + "_generated.mp4")
-            os.system("ffmpeg -i " + temp_input_file_1 + " -i " + temp_input_file_2 +
-                      " -filter_complex blend='difference' " + temp_output_file + " -hide_banner -loglevel warning")
-
-    else:
-        print("Invalid complexity: please choose 2 (fast) or 3 (slow, more complicated output)")
-    
-    # make temporary .aac file to add to the mp4 video (.wav not supported directly)
-    temp_audio_file = os.path.join(args.temp_path, args.song_name + "_temp.aac")
-    os.system("ffmpeg -i " + args.music_file_path + " -ab 256k -hide_banner -loglevel warning " + temp_audio_file)
+    sub_vid_paths = [join(args.temp_path, path) for path in os.listdir(args.temp_path) if 'subVid' in path]
+    blend_vid_paths = []
+    for i, _ in enumerate(sub_vid_paths):
+        blend_vid_paths.append(sub_vid_paths[i].replace("subVid", 'blended'))
+        if (int(args.complexity) - 2) - i >= 0 and not exists(blend_vid_paths[i]):
+            print("Blending videos together " + str(i))
+            os.system(ffmpeg_cmd_in + sub_vid_paths[i] + " -i " + sub_vid_paths[i + 1] +
+                      ffmpeg_cmd_codec + " -filter_complex blend='difference' " + blend_vid_paths[i] + ffmpeg_cmd_opt)
+        if (int(args.complexity) - 2) - i == 0 and not any(['generated' in p for p in os.listdir(args.temp_path)]):
+            print("Mashing those blended videos together")
+            output_path = blend_vid_paths[0].replace("blended", 'generated')
+            os.system(ffmpeg_cmd_in + blend_vid_paths[0] + " -i " + blend_vid_paths[1] +
+                      ffmpeg_cmd_codec + " -filter_complex blend='difference' " + output_path + ffmpeg_cmd_opt)
 
     # chromashift to add pizazz\
-    temp_input_file = os.path.join(args.temp_path, args.song_name + "_generated.mp4")
-    temp_output_file = os.path.join(args.temp_path, args.song_name + "_generated_final.mp4")
-    print("Glitching final result")
-    os.system("ffmpeg -i " + temp_input_file + " -vf chromashift=crv=-200:cbv=100:crh=100 " + temp_output_file +
-              " -hide_banner -loglevel warning")
+    song_name, _ = splitext(args.music_file_path.split(os.sep)[-1:][0])
+    temp_input_file = join(args.temp_path, song_name + "_generated0.mp4")
+    temp_output_file = join(args.temp_path, song_name + "_generated_final.mp4")
+    if not exists(temp_output_file):
+        print("Glitching final result")
+        os.system(ffmpeg_cmd_in + temp_input_file + ffmpeg_cmd_codec +
+                  " -vf chromashift=crv=-200:cbv=100:crh=100 -qp 20 " + temp_output_file + ffmpeg_cmd_opt)
 
-    # add audio
-    print("Adding Audio")
-    os.system("ffmpeg -i " + temp_output_file + " -i " + temp_audio_file + " -c copy -map 0:v:0 -map 1:a:0 " +
-              args.out_path + " -hide_banner -loglevel warning")
+    # make temporary .aac file and add it to the mp4 video (.wav not supported directly)
+    output_path_final = temp_output_file.replace("temp", 'out')
+    temp_audio_file = join(args.temp_path, song_name + "_temp.aac")
+    if not (exists(output_path_final) or exists(temp_audio_file)):
+        print("Copying Audio and adding it to video clip")
+        os.system(ffmpeg_cmd_in + args.music_file_path + " -ab 256k " + temp_audio_file + ffmpeg_cmd_opt)
+        os.system(ffmpeg_cmd_in + temp_output_file + " -i " + temp_audio_file +
+                  " -c copy -map 0:v:0 -map 1:a:0 " + output_path_final + ffmpeg_cmd_opt)
 
     # file clean up
-    print("deleting temporary files")
-    for vid in os.listdir(args.temp_path):
-        os.remove(os.path.join(args.temp_path, vid))
-    
+    if clean_up:
+        print("deleting temporary files")
+        for vid in os.listdir(args.temp_path):
+            os.remove(join(args.temp_path, vid))
+
     end = time.time()
     print("Total program runtime, in seconds - " + str(end - start))
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Generate a music video - talent free!')
-    parser.add_argument("-project_folder", help="Path to project folder with all directories it contains")
-    parser.add_argument("--song_name", help="Song name (should be located in project_folder/music/)")
-    parser.add_argument("--bpm", help="Song BPM (automatically detected if not filled in)")
-    parser.add_argument("--complexity", default="3",
-                        help="Complexity (2 OR 3), 2 for quicker and 3 for more intense visuals (3 by default)")
-    parser.add_argument("--dynamic", default=True,
-                        help="True for dynamic visuals based on song intensity, False for random visuals")
-    parser.add_argument("--output", help="Output file prefix eg MyVideo")
-    parser.add_argument("--output_res", default="1080", help="Output video resolution, 1080 or 720")
-    args = parser.parse_args()
+def parse_args():
+    if CLI_mode:
+        parser = argparse.ArgumentParser(description='Generate a music video - talent free!')
+        parser.add_argument("-project_folder", help="Path to project folder with all directories it contains")
+        parser.add_argument("--song_name", help="Song name (should be located in project_folder/music/)")
+        parser.add_argument("--bpm", help="Song BPM (automatically detected if not filled in)")
+        parser.add_argument("--complexity", default="3",
+                            help="Complexity (2 OR 3), 2 for quicker and 3 for more intense visuals (3 by default)")
+        parser.add_argument("--dynamic", default=True,
+                            help="True for dynamic visuals based on song intensity, False for random visuals")
+        parser.add_argument("--output", help="Output file prefix eg MyVideo")
+        parser.add_argument("--output_res", default="1080", help="Output video resolution, 1080 or 720")
+        parser.add_argument("--parallel_proc", default=True, help="Use multiprocessing to improve performances")
+        args = parser.parse_args()
+    else:
+        args = argparse.Namespace(project_folder=project_folder,
+                                  song_name='',
+                                  bpm='',
+                                  complexity=complexity,
+                                  dynamic=dynamic,
+                                  output='',
+                                  output_res=output_res,
+                                  parallel_proc=parallel_proc)
 
     # Defining additional necessary arguments
     args.project_folder = args.project_folder if args.project_folder else os.getcwd()
-    args.song_name = args.song_name if args.song_name else os.listdir(os.path.join(args.project_folder, "music"))[0]
-    args.music_file_path = str(os.path.join(args.project_folder, "music", args.song_name))
-    args.out_path = str(os.path.join(args.project_folder, "out", args.output if args.output else args.song_name))
-    args.temp_path = os.path.join(args.project_folder, "temp" + os.sep)
-    args.titles_path = os.path.join(args.project_folder, "titles" + os.sep)
-    args.videos_path = os.path.join(args.project_folder, "videos" + os.sep)
+    args.song_name = args.song_name if args.song_name else str(os.listdir(join(args.project_folder, "music"))[0])
+    args.music_file_path = str(join(args.project_folder, "music", args.song_name))
+    args.titles_path = str(join(args.project_folder, "titles" + os.sep))
+    args.videos_path = str(join(args.project_folder, "videos" + os.sep))
+    args.temp_path = str(join(args.project_folder, "temp" + os.sep))
     args.bpm = str(generate_timestamps.guess_bpm(args.music_file_path)) if not args.bpm else args.bpm
 
-    music_video_generator(args)
+    return args
+
+
+if __name__ == "__main__":
+    music_video_generator(parse_args())

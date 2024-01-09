@@ -6,7 +6,7 @@ import pixabay.core
 from pexelsapi.pexels import Pexels
 
 # TODO:
-# Add coverr.co: https://api.coverr.co/docs/videos/#list-videos
+# Add coverr.co: https://api.coverr.co/docs/
 # free video footage, SplitShire Videos, Clipstill, Videezy, lifeofvids
 
 

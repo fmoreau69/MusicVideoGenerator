@@ -30,18 +30,16 @@ def preload(videos_path, resolution):
     print('Preloading videos from video path "{}"'.format(videos_path))
 
     for vid in os.listdir(videos_path):
-        randomizer = random.random()  # seed to randomise individual videos orientation / colour to give illusion of change between videos
+        # seed to randomise individual videos orientation / colour to give illusion of change between videos
+        randomizer = random.random()
         if randomizer < 0.3:
             videos_list.append(VideoFileClip(videos_path + vid, target_resolution=(height, width)))
         elif randomizer < 0.6:
-            videos_list.append(
-                VideoFileClip(videos_path + vid, target_resolution=(height, width)).fl_image(invert_green_blue))
+            videos_list.append(VideoFileClip(videos_path + vid, target_resolution=(height, width)).fl_image(invert_green_blue))
         elif randomizer < 0.9:
             videos_list.append(VideoFileClip(videos_path + vid, target_resolution=(height, width)).fx(vfx.mirror_x))
         else:
-            videos_list.append(
-                VideoFileClip(videos_path + vid, target_resolution=(height, width)).fl_image(invert_green_blue).fx(
-                    vfx.mirror_y))
+            videos_list.append(VideoFileClip(videos_path + vid, target_resolution=(height, width)).fl_image(invert_green_blue).fx(vfx.mirror_y))
 
     for vid in videos_list:
         if vid.size[0] > width or vid.size[1] > height:

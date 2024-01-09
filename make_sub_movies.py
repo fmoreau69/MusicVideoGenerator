@@ -8,7 +8,8 @@ from generate_timestamps import *
 from tools import preload, get_closest_percent
 
 '''
-Dynamic video generation - Intense sections of music will have faster visuals
+If simple_vid: Simple, randomized, tempo synced video generation
+If smart_vid: Dynamic video generation - Intense sections of music will have faster visuals
 '''
 
 HIGH_INTENSITY = [1, 1, 1, 4, 4, 4]
@@ -16,9 +17,10 @@ MEDIUM_INTENSITY = [4, 4, 4, 4, 8, 8, 8, 16]
 LOW_INTENSITY = [8, 8, 8, 16, 16, 16, 16]
 
 
-def make_sub_movie(music_file_path, bpm, videos_list, idx, start, finish, duration, intensities, resolution):
+def make_sub_movie(music_file_path: str, bpm: float, videos_list: list, idx: int,
+                   start: float, finish: float, duration: float, intensities: dict, resolution: str, dynamic: str):
     """
-    Saves a simple movie synced to the provided audio file
+    Saves a simple or smart movie synced to the provided audio file
 
     music_file_path (str): path to song (.wav)
     bpm (int / float): beats per minute tempo of the song
@@ -28,7 +30,7 @@ def make_sub_movie(music_file_path, bpm, videos_list, idx, start, finish, durati
     start: first downbeat
     finish: last downbeat
     duration: total duration
-    resolution: desired output resolution (ex: 1080 or 720)
+    resolution (str): desired output resolution (ex: 1080 or 720)
     """
 
     filename, _ = os.path.splitext(music_file_path.split(os.sep)[-1:][0])
@@ -36,13 +38,13 @@ def make_sub_movie(music_file_path, bpm, videos_list, idx, start, finish, durati
     titles_path = str(os.path.join(project_folder, 'titles' + os.sep))
     titles_list = os.listdir(titles_path)
     temp_path = str(os.path.join(project_folder, 'temp' + os.sep))
-    length_of_a_beat = 1 / (bpm / 60)  # time between beats
+    length_of_a_beat = 60 / bpm   # time between beats
     videos = []
 
     # black screen on start
     if 0 < start < 4:
         videos.append(VideoFileClip(titles_path + random.choice([x for x in titles_list])).subclip(0, start).fx(vfx.colorx, 0.0))
-    
+
     # ambient intro on start
     elif start > 0:
         clip = VideoFileClip(titles_path + random.choice([x for x in titles_list])).subclip(0, start)
@@ -54,93 +56,91 @@ def make_sub_movie(music_file_path, bpm, videos_list, idx, start, finish, durati
     beats = 0  # current beats rendered
 
     current_render_percent = 0  # used to print progress to console
-    
+
     print("Generating video " + filename + "_subVid" + str(idx) + ".mp4")
 
-    while beats < (len(intensities) * 16):
+    while start < finish if dynamic == 'simple_vid' else beats < (len(intensities) * 16):
 
         # switch up video rate every 4 bars
         if beats % 16 == 0:
             new4_bar_block = True
 
         if new4_bar_block:
-            # DYNAMIC video selection
-            if intensities[current4_bar_block] == "High":
-                # If the previous section was low and this one is high, make it speedy by default
-                if current4_bar_block > 0 and intensities[current4_bar_block - 1] == "Low":
-                    i = 1
-                else:
-                    i = random.choice(HIGH_INTENSITY) 
 
-            elif intensities[current4_bar_block] == "Medium":
-                i = random.choice(MEDIUM_INTENSITY)
-            else: 
-                try:
-                    # Check next section is a "drop"
-                    if intensities[current4_bar_block + 1] == "High":
-                        i = 16
-                        fade_out = True
+            # simple video case (static video selection) #
+            if dynamic == 'simple_vid':
+                i = random.choice([1, 4, 4, 4, 8, 8, 16, 16, 16])  # random rate of change of the videos
+
+            # smart video case (dynamic video selection) #
+            elif dynamic == 'smart_vid':
+                if intensities[current4_bar_block] == "High":
+                    # If the previous section was low and this one is high, make it speedy by default
+                    if current4_bar_block > 0 and intensities[current4_bar_block - 1] == "Low":
+                        i = 1
                     else:
+                        i = random.choice(HIGH_INTENSITY)
+                elif intensities[current4_bar_block] == "Medium":
+                    i = random.choice(MEDIUM_INTENSITY)
+                else:
+                    try:
+                        # Check next section is a "drop"
+                        if intensities[current4_bar_block + 1] == "High":
+                            i = 16
+                            fade_out = True
+                        else:
+                            i = random.choice(LOW_INTENSITY)
+                    except KeyError:
                         i = random.choice(LOW_INTENSITY)
-                except KeyError:
-                    i = random.choice(LOW_INTENSITY)
-                
-            current4_bar_block += 1
+                current4_bar_block += 1
 
         while True:
             try:  # try / catch block to account for videos that are not long enough
                 video = random.choice(videos_list)
-                video_start = random.randint(0, math.floor(video.duration - length_of_a_beat * i))  # random video portion
+                video_start = random.randint(0, math.floor(video.duration - length_of_a_beat * i))  # random video part
                 break
             except ValueError:
                 continue
-        
+
         if not fade_out:
             videos.append(video.subclip(video_start, video_start + length_of_a_beat * i))
         else:  # fadeout before a drop
             video_fade_out = video.subclip(video_start, video_start + length_of_a_beat * i)
             videos.append(video_fade_out.fx(vfx.fadeout, duration=video_fade_out.duration / 4))
             fade_out = False
-        
+
         start += (length_of_a_beat * i)
         beats += i
-        
+
         # print progress to screen
-        percent_rendered = get_closest_percent((beats / (len(intensities) * 16) * 100))
+        percent = start / finish * 100 if dynamic == 'simple_vid' else beats / (len(intensities) * 16) * 100
+        percent_rendered = get_closest_percent(percent)
         if percent_rendered != current_render_percent:
             current_render_percent = percent_rendered
             print(str(current_render_percent) + "%/ rendered")
-       
+
         new4_bar_block = False
-    
+
     # Ambient outro
     if start < duration:
         clip = VideoFileClip(titles_path + random.choice([x for x in titles_list])).subclip(0, duration-start)
         videos.append(clip.fx(vfx.fadeout, duration=clip.duration/2))
 
     # Makes all videos at the same resolution
+    print("making sub videos " + resolution + "p")
+    width, height = str(int(int(resolution) * (16 / 9))), resolution
     for vid in videos:
-        width, height = str(int(int(resolution) * (16/9))), resolution
         if vid.h != int(height):
             print("resizing video " + vid.filename)
             output_path = os.path.splitext(vid.filename)[0] + "_resized" + os.path.splitext(vid.filename)[1]
-            os.system("ffmpeg -hwaccel cuda -i " + vid.filename + "-c:v h264_nvenc -vf scale=" + width + ":" + height +
-                      " -crf 18 -preset medium -y " + output_path + " -hide_banner -loglevel warning")  # -qp 20
+            os.system("ffmpeg -hwaccel cuda -i " + vid.filename + " -c:v h264_nvenc -vf scale=" + width + ":" + height +
+                      " -crf 18 -preset slow -qp 20 -y " + output_path + " -hide_banner -loglevel warning")  # -qp 20 -c:v h264_cuvid
             vid.size = (int(width), int(height))
-            vid.filename = output_path  # .replace('_resized', '')
-        else:
-            print("Video" + vid.filename + " is already " + height + "p")
-
-    final_clip = concatenate_videoclips(videos, method="compose")
+            vid.filename = output_path
 
     # write video
-    width, height = int(int(resolution) * (16 / 9)), int(resolution)
-    if final_clip.size != (width, height):
-        final_clip.write_videofile(filename=temp_path + filename + "_subVid" + str(idx) + "_2resize.mp4",
-                                   preset="ultrafast", threads=6, audio=False)  # , codec='h264_nvenc')
-    else:
-        final_clip.write_videofile(filename=temp_path + filename + "_subVid" + str(idx) + ".mp4",
-                                   preset="ultrafast", threads=6, audio=False)  # , codec='h264_nvenc')
+    final_clip = concatenate_videoclips(videos, method="compose")
+    final_clip.write_videofile(filename=temp_path + filename + "_subVid" + str(idx) + ".mp4", bitrate='12000000',
+                               threads=64, verbose=False, preset="slow", audio=False, codec="h264_nvenc")
 
     # memory save
     for v in videos:
@@ -154,6 +154,7 @@ def main(argv):
     complexity = argv[2]
     resolution = argv[3]
     parallel_proc = argv[4]
+    dynamic = argv[5]
 
     print('Analysing waveform of "{}"'.format(str(music_file_path.split(os.sep)[-1])))
     start, finish = guess_first_and_last_down_beat(music_file_path)
@@ -166,13 +167,13 @@ def main(argv):
     if parallel_proc:
         p = Pool(processes=int(complexity))
         for idx in range(int(complexity)):
-            args = music_file_path, float(bpm), videos_list, idx, start, finish, duration, intensities, resolution
+            args = music_file_path, bpm, videos_list, idx, start, finish, duration, intensities, resolution, dynamic
             p.apply_async(make_sub_movie, args=args)
         p.close()
         p.join()
     else:
         for idx in range(int(complexity)):
-            args = music_file_path, float(bpm), videos_list, idx, start, finish, duration, intensities, resolution
+            args = music_file_path, bpm, videos_list, idx, start, finish, duration, intensities, resolution, dynamic
             make_sub_movie(*args)
 
 
