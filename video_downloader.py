@@ -1,3 +1,4 @@
+import math
 import os
 import requests
 from tqdm import tqdm
@@ -15,7 +16,7 @@ queries = ['ocean', 'boat', 'mariners', 'old ship', 'sailors', 'sea']
 output_dir = 'G:\BANQUES_VIDEOS'
 args = {
     'global': {'size': 'large', 'ratio': 16 / 9, 'minWidth': 1920, 'minHeight': 1080,
-               'per_page': 100, 'video_nb': 20, 'ratio_strict': 1, 'keep_all': 0},
+               'per_page': 100, 'video_nb': 20, 'ratio_strict': 1, 'keep_all': 0, 'sub_folders': True},
     'pixabay': {'use_api': 1, 'px': pixabay.core('41014354-df28462b05ba0f555a30ac65a'),
                 'lang': 'en', 'orientation': 'horizontal', 'colors': 'all'},
     'pexels': {'use_api': 1, 'px': Pexels('f7H8h2PvP6H2CZgByxRqbGCsY8kTMsdr8mPlBzwTqcNOX5mSiWngfGkz'),
@@ -27,18 +28,18 @@ def video_downloader(queries: list, output_dir: str, args: dict):
     global_args = args['global']
     # Loop on queries
     for query in queries:
-        file_destination = os.path.join(output_dir, "".join(ch for ch in query if ch.isalnum()))
+        file_destination = os.path.join(output_dir, "".join(ch for ch in query if ch.isalnum())) \
+            if global_args['sub_folders'] else output_dir
         os.makedirs(file_destination, exist_ok=True)
         # Loop on sources
         for key in args:
             if key != 'global' and args[key]['use_api']:
                 videos = get_video_list(query, key, args[key], global_args)
-                video_counter = min(global_args['video_nb'], len(videos))
+                video_counter = min(math.ceil(global_args['video_nb']/(len(args)-1)), len(videos))
                 progress_bar = tqdm(total=video_counter, position=0, leave=True,
                                     desc=key + ' video download progress for query "' + query + '"')
                 # Loop on videos
                 for vid in videos:
-                    video_counter -= 1
                     progress_bar.update(1)
                     filename = str(vid['id']) + '.mp4' if isinstance(vid, dict) else str(vid.getId()) + '.mp4'
                     file_path = os.path.join(file_destination, filename)
@@ -47,6 +48,7 @@ def video_downloader(queries: list, output_dir: str, args: dict):
                         break
                     elif os.path.exists(file_path):
                         print('Video file "' + filename + '" has already been downloaded')
+                        video_counter -= 1
                         continue
                     else:
                         w = vid['width'] if key != 'pixabay' else next(iter(vid._raw_data['videos'].values()))['width']
@@ -54,8 +56,7 @@ def video_downloader(queries: list, output_dir: str, args: dict):
                         if global_args['ratio_strict'] and w/h == global_args['ratio'] or global_args['keep_all']:
                             # print('Downloading video file: ' + filename)
                             download_video(vid, key, file_path, global_args)
-                        else:
-                            video_counter += 1
+                            video_counter -= 1
 
 
 def get_video_list(query, key, args, global_args):

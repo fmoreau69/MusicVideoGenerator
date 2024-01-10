@@ -1,30 +1,46 @@
 import os
 import time
+import tqdm
 import argparse
+import pixabay.core
+from pexelsapi.pexels import Pexels
 from os.path import exists, join, splitext
-
+from video_downloader import video_downloader
 import generate_timestamps
 from make_sub_movies import main as make_sub_movies
 
 # TODO:
+# Add global progress-bar => In progress
 # Add multithread capabilities => In progress
-# Integrate video_downloader to automatically download videos based on tags
 # Integrate AI video generation
 # different time signature support
 
 clean_up = False
+download = False
 CLI_mode = False  # if False => adjust parameters below
 
+# parameters
 complexity = '3'
 dynamic = True
 GPU_accel = True
 output_res = '1080'
 parallel_proc = False
 
-ffmpeg_cmd_in, ffmpeg_cmd_codec = ["ffmpeg -hwaccel cuda -i ", " -c:v h264_nvenc"] if GPU_accel else ["ffmpeg -i ", ""]
-ffmpeg_cmd_opt = " -hide_banner -loglevel warning"
+ffmpeg_cmd_in, ffmpeg_cmd_codec = ["ffpb -hwaccel cuda -i ", " -c:v h264_nvenc"] if GPU_accel else ["ffpb -i ", ""]
+ffmpeg_cmd_opt = " -hide_banner -loglevel warning -stats"
 
-project_folder = 'E:\\FAB_COMPOS\\Video_songs\\Brest2008\\Clip'
+project_folder = 'E:\\FAB_COMPOS\\Video_songs\\Brest2008\\Clip2'
+
+titles_queries = ['ocean']
+videos_queries = ['boat', 'mariners', 'old ship', 'sailors', 'sea']
+download_args = {
+    'global': {'size': 'large', 'ratio': 16 / 9, 'minWidth': 1920, 'minHeight': 1080,
+               'per_page': 100, 'video_nb': 10, 'ratio_strict': 1, 'keep_all': 0, 'sub_folders': False},
+    'pixabay': {'use_api': 1, 'px': pixabay.core('41014354-df28462b05ba0f555a30ac65a'),
+                'lang': 'en', 'orientation': 'horizontal', 'colors': 'all'},
+    'pexels': {'use_api': 1, 'px': Pexels('f7H8h2PvP6H2CZgByxRqbGCsY8kTMsdr8mPlBzwTqcNOX5mSiWngfGkz'),
+               'lang': 'en-US', 'orientation': 'landscape', 'colors': ''}
+}
 
 
 def music_video_generator(args):
@@ -44,8 +60,13 @@ def music_video_generator(args):
 
     start = time.time()
 
+    if download:
+        video_downloader(titles_queries, join(project_folder, 'titles'), download_args)
+        video_downloader(videos_queries, join(project_folder, 'videos'), download_args)
+
     # Generates n(complexity) number of randomized videos
-    last_sub_input_name = splitext(args.music_file_path.split(os.sep)[-1:][0])[0] + '_subVid2.mp4'
+    last_sub_input_name = (splitext(args.music_file_path.split(os.sep)[-1:][0])[0] +
+                           '_subVid' + str(int(args.complexity) - 1) + '.mp4')
     if not exists(join(args.temp_path, last_sub_input_name)):
         sub_vid_args = args.music_file_path, float(args.bpm), args.complexity, args.output_res, args.parallel_proc
         if args.dynamic:
@@ -56,23 +77,35 @@ def music_video_generator(args):
                 else make_sub_movies([*sub_vid_args, 'simple_vid'])
 
     # Blends all videos
-    sub_vid_paths = [join(args.temp_path, path) for path in os.listdir(args.temp_path) if 'subVid' in path]
-    blend_vid_paths = []
-    for i, _ in enumerate(sub_vid_paths):
-        blend_vid_paths.append(sub_vid_paths[i].replace("subVid", 'blended'))
-        if (int(args.complexity) - 2) - i >= 0 and not exists(blend_vid_paths[i]):
-            print("Blending videos together " + str(i))
-            os.system(ffmpeg_cmd_in + sub_vid_paths[i] + " -i " + sub_vid_paths[i + 1] +
-                      ffmpeg_cmd_codec + " -filter_complex blend='difference' " + blend_vid_paths[i] + ffmpeg_cmd_opt)
-        if (int(args.complexity) - 2) - i == 0 and not any(['generated' in p for p in os.listdir(args.temp_path)]):
+    song_name, _ = splitext(args.music_file_path.split(os.sep)[-1:][0])
+    sub_vid_paths = [join(args.temp_path, path) for path in reversed(os.listdir(args.temp_path)) if 'subVid' in path]
+    blend_vid_paths = [''] * (len(sub_vid_paths)-1)
+    mashed_vid_paths = [''] * (len(sub_vid_paths)-2)
+    generated_output_path = join(args.temp_path, song_name + "_generated.mp4")
+    count = 0
+    for i in reversed(range(len(sub_vid_paths)-1)):
+        count += 1
+        blend_vid_paths[i] = sub_vid_paths[i+1].replace("subVid", 'blended')
+        if not exists(blend_vid_paths[i]):
+            print("Blending sub videos together " + str(count))
+            os.system(ffmpeg_cmd_in + sub_vid_paths[i+1] + " -i " + sub_vid_paths[i] + ffmpeg_cmd_codec +
+                      " -filter_complex blend='difference' -y " + blend_vid_paths[i] + ffmpeg_cmd_opt)
+            if i == 0 and len(blend_vid_paths) == 1:
+                os.rename(blend_vid_paths[0], generated_output_path)
+        if i < len(sub_vid_paths)-2 and not exists(mashed_vid_paths[i]):
+            print("Blending those blended videos together " + str(count-1))
+            mashed_vid_paths[i] = blend_vid_paths[i+1].replace("blended", 'mashed')
+            os.system(ffmpeg_cmd_in + blend_vid_paths[i+1] + " -i " + blend_vid_paths[i] + ffmpeg_cmd_codec +
+                      " -filter_complex blend='difference' -y " + mashed_vid_paths[i] + ffmpeg_cmd_opt)
+            if i == 0 and len(mashed_vid_paths) == 1:
+                os.rename(mashed_vid_paths[0], generated_output_path)
+        if i < len(sub_vid_paths)-3 and not exists(generated_output_path):
             print("Mashing those blended videos together")
-            output_path = blend_vid_paths[0].replace("blended", 'generated')
-            os.system(ffmpeg_cmd_in + blend_vid_paths[0] + " -i " + blend_vid_paths[1] +
-                      ffmpeg_cmd_codec + " -filter_complex blend='difference' " + output_path + ffmpeg_cmd_opt)
+            os.system(ffmpeg_cmd_in + mashed_vid_paths[i+1] + " -i " + mashed_vid_paths[i] + ffmpeg_cmd_codec +
+                      " -filter_complex blend='difference' -y " + generated_output_path + ffmpeg_cmd_opt)
 
     # chromashift to add pizazz\
-    song_name, _ = splitext(args.music_file_path.split(os.sep)[-1:][0])
-    temp_input_file = join(args.temp_path, song_name + "_generated0.mp4")
+    temp_input_file = join(args.temp_path, song_name + "_generated.mp4")
     temp_output_file = join(args.temp_path, song_name + "_generated_final.mp4")
     if not exists(temp_output_file):
         print("Glitching final result")
@@ -85,6 +118,7 @@ def music_video_generator(args):
     if not (exists(output_path_final) or exists(temp_audio_file)):
         print("Copying Audio and adding it to video clip")
         os.system(ffmpeg_cmd_in + args.music_file_path + " -ab 256k " + temp_audio_file + ffmpeg_cmd_opt)
+        os.makedirs(args.temp_path.replace("temp", 'out'), exist_ok=True)
         os.system(ffmpeg_cmd_in + temp_output_file + " -i " + temp_audio_file +
                   " -c copy -map 0:v:0 -map 1:a:0 " + output_path_final + ffmpeg_cmd_opt)
 
@@ -101,7 +135,7 @@ def music_video_generator(args):
 def parse_args():
     if CLI_mode:
         parser = argparse.ArgumentParser(description='Generate a music video - talent free!')
-        parser.add_argument("-project_folder", help="Path to project folder with all directories it contains")
+        parser.add_argument("--project_folder", help="Path to project folder with all directories it contains")
         parser.add_argument("--song_name", help="Song name (should be located in project_folder/music/)")
         parser.add_argument("--bpm", help="Song BPM (automatically detected if not filled in)")
         parser.add_argument("--complexity", default="3",

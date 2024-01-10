@@ -137,8 +137,10 @@ def make_sub_movie(music_file_path: str, bpm: float, videos_list: list, idx: int
             vid.size = (int(width), int(height))
             vid.filename = output_path
 
-    # write video
     final_clip = concatenate_videoclips(videos, method="compose")
+
+    # write video
+    os.makedirs(temp_path, exist_ok=True)
     final_clip.write_videofile(filename=temp_path + filename + "_subVid" + str(idx) + ".mp4", bitrate='12000000',
                                threads=64, verbose=False, preset="slow", audio=False, codec="h264_nvenc")
 
