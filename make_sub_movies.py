@@ -1,8 +1,11 @@
 import math
 import random
+import logging as log
+from os.path import join, split, splitext
 
 from moviepy.editor import *
-from multiprocessing import Pool
+# from multiprocessing import Pool
+from mutiprocessing_log import LoggingPool
 
 from generate_timestamps import *
 from tools import preload, get_closest_percent
@@ -33,11 +36,11 @@ def make_sub_movie(music_file_path: str, bpm: float, videos_list: list, idx: int
     resolution (str): desired output resolution (ex: 1080 or 720)
     """
 
-    filename, _ = os.path.splitext(music_file_path.split(os.sep)[-1:][0])
-    project_folder = str(os.path.join(*music_file_path.split(os.sep)[:-2]))
-    titles_path = str(os.path.join(project_folder, 'titles' + os.sep))
+    song_name, _ = splitext(split(music_file_path)[1])
+    project_folder = f"{join(*music_file_path.split(os.sep)[:-2])}"
+    titles_path = str(join(project_folder, 'titles' + os.sep))
     titles_list = os.listdir(titles_path)
-    temp_path = str(os.path.join(project_folder, 'temp' + os.sep))
+    temp_path = str(join(project_folder, 'temp' + os.sep))
     length_of_a_beat = 60 / bpm   # time between beats
     videos = []
 
@@ -57,7 +60,7 @@ def make_sub_movie(music_file_path: str, bpm: float, videos_list: list, idx: int
 
     current_render_percent = 0  # used to print progress to console
 
-    print("Generating video " + filename + "_subVid" + str(idx) + ".mp4")
+    print(f"Generating video {song_name}_subVid{idx}.mp4")
 
     while start < finish if dynamic == 'simple_vid' else beats < (len(intensities) * 16):
 
@@ -116,7 +119,7 @@ def make_sub_movie(music_file_path: str, bpm: float, videos_list: list, idx: int
         percent_rendered = get_closest_percent(percent)
         if percent_rendered != current_render_percent:
             current_render_percent = percent_rendered
-            print(str(current_render_percent) + "%/ rendered")
+            print(f"{current_render_percent} %/ rendered")
 
         new4_bar_block = False
 
@@ -126,21 +129,23 @@ def make_sub_movie(music_file_path: str, bpm: float, videos_list: list, idx: int
         videos.append(clip.fx(vfx.fadeout, duration=clip.duration/2))
 
     # Makes all videos at the same resolution
-    print("making sub videos " + resolution + "p")
+    print(f"Making sub videos {resolution}p")
     width, height = str(int(int(resolution) * (16 / 9))), resolution
     for vid in videos:
         if vid.h != int(height):
-            print("resizing video " + vid.filename)
-            output_path = os.path.splitext(vid.filename)[0] + "_resized" + os.path.splitext(vid.filename)[1]
+            print(f"resizing video {vid.filename}")
+            output_path = splitext(vid.filename)[0] + "_resized" + splitext(vid.filename)[1]
             os.system("ffmpeg -hwaccel cuda -i " + vid.filename + " -c:v h264_nvenc -vf scale=" + width + ":" + height +
                       " -crf 18 -preset slow -qp 20 -y " + output_path + " -hide_banner -loglevel warning")  # -qp 20 -c:v h264_cuvid
             vid.size = (int(width), int(height))
             vid.filename = output_path
 
-    # write video
     final_clip = concatenate_videoclips(videos, method="compose")
-    final_clip.write_videofile(filename=temp_path + filename + "_subVid" + str(idx) + ".mp4", bitrate='12000000',
-                               threads=64, verbose=False, preset="slow", audio=False, codec="h264_nvenc")
+
+    # write video
+    os.makedirs(temp_path, exist_ok=True)
+    final_clip.write_videofile(filename=temp_path + song_name + "_subVid" + str(idx) + ".mp4", bitrate='8000000',
+                               threads=16, verbose=False, preset="slow", audio=False, codec="h264_nvenc")
 
     # memory save
     for v in videos:
@@ -156,21 +161,24 @@ def main(argv):
     parallel_proc = argv[4]
     dynamic = argv[5]
 
-    print('Analysing waveform of "{}"'.format(str(music_file_path.split(os.sep)[-1])))
+    print(f"Analysing waveform of {split(music_file_path)[1]}")
     start, finish = guess_first_and_last_down_beat(music_file_path)
     duration = get_duration(music_file_path)
     intensities = get_intensities(music_file_path, bpm)
 
-    main_folder = os.path.join(*music_file_path.split(os.sep)[:-2])
-    videos_path = os.path.join(str(main_folder), 'videos' + os.sep)
+    main_folder = split(split(music_file_path)[0])[0]
+    videos_path = join(main_folder, 'videos' + os.sep)
     videos_list = preload(videos_path, resolution)
     if parallel_proc:
-        p = Pool(processes=int(complexity))
-        for idx in range(int(complexity)):
-            args = music_file_path, bpm, videos_list, idx, start, finish, duration, intensities, resolution, dynamic
-            p.apply_async(make_sub_movie, args=args)
-        p.close()
-        p.join()
+        # p = Pool(processes=int(complexity)*2)
+        with LoggingPool('%(asctime)-15s (PID %(process)-5d) [%(levelname)-8s]: %(message)s', level=log.INFO,
+                         filename='import.log') as _:
+            with LoggingPool().make_pool(6) as pool:
+                for idx in range(int(complexity)):
+                    # args = music_file_path, bpm, videos_list, idx, start, finish, duration, intensities, resolution, dynamic
+                    pool.apply_async(make_sub_movie, (music_file_path, bpm, videos_list, idx, start, finish, duration, intensities, resolution, dynamic,))
+                pool.close()
+                pool.join()
     else:
         for idx in range(int(complexity)):
             args = music_file_path, bpm, videos_list, idx, start, finish, duration, intensities, resolution, dynamic

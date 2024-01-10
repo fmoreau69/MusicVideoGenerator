@@ -20,7 +20,7 @@ def guess_first_and_last_down_beat(music_file_path: str):
     Reads a .wav audio file (str) and guesses the timestamp of first and last downbeats (float,float) in seconds
     """
 
-    fs, data = read(music_file_path)
+    _, data = read(music_file_path)
     data = data[:, 0]  # one stereo channel for ease
     highest_db = max(data)
     count, count2 = 0, 0
@@ -65,7 +65,7 @@ def get_counts_in_4_bars(music_file_path: str, bpm: float):
     returns the number of data points in 4 bars of a file for downstream works
     """
 
-    fs, data = read(music_file_path)
+    _, data = read(music_file_path)
     data = data[:, 0]  # one stereo channel for ease
 
     length = len(data)
@@ -94,7 +94,7 @@ def get_intensities(music_file_path: str, bpm: float):
     intensities = {}
 
     # analyse waveform
-    fs, data = read(music_file_path)
+    _, data = read(music_file_path)
 
     # one stereo channel for ease
     data = data[:, 0]
@@ -147,7 +147,7 @@ def save_intensities(music_file_path: str, intensities: dict):
 
     ordered = sorted(ordered)
 
-    with open("analysis/" + str(music_file_path) + ".csv", "w", newline='') as file:
+    with open(f"analysis/{music_file_path}.csv", "w", newline='') as file:
         fieldnames = ["Section", "Intensity"]
         writer = csv.DictWriter(file, fieldnames=fieldnames)
 
@@ -167,7 +167,7 @@ def guess_bpm(music_file_path: str):
     y, sr = librosa.load(music_file_path)
     onset_env = librosa.onset.onset_strength(y=y, sr=sr)
     tempo = round(librosa.feature.tempo(onset_envelope=onset_env, sr=sr)[0], 1)
-    print('Estimated tempo of "{}"'.format(str(music_file_path.split(os.sep)[-1])) + ' = ' + str(tempo))
+    print(f"Estimated tempo of '{os.path.split(music_file_path)[1]}' = {tempo}")
     return tempo
 
 
