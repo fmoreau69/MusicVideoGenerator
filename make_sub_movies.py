@@ -1,11 +1,9 @@
 import math
 import random
-import logging as log
+import concurrent.futures
 from os.path import join, split, splitext
 
 from moviepy.editor import *
-# from multiprocessing import Pool
-from mutiprocessing_log import LoggingPool
 
 from generate_timestamps import *
 from tools import preload, get_closest_percent
@@ -37,7 +35,7 @@ def make_sub_movie(music_file_path: str, bpm: float, videos_list: list, idx: int
     """
 
     song_name, _ = splitext(split(music_file_path)[1])
-    project_folder = f"{join(*music_file_path.split(os.sep)[:-2])}"
+    project_folder = split(split(music_file_path)[0])[0]
     titles_path = str(join(project_folder, 'titles' + os.sep))
     titles_list = os.listdir(titles_path)
     temp_path = str(join(project_folder, 'temp' + os.sep))
@@ -144,8 +142,8 @@ def make_sub_movie(music_file_path: str, bpm: float, videos_list: list, idx: int
 
     # write video
     os.makedirs(temp_path, exist_ok=True)
-    final_clip.write_videofile(filename=temp_path + song_name + "_subVid" + str(idx) + ".mp4", bitrate='8000000',
-                               threads=16, verbose=False, preset="slow", audio=False, codec="h264_nvenc")
+    final_clip.write_videofile(filename=f"{temp_path}{song_name}_subVid{idx}.mp4", bitrate='8000000',
+                               threads=64, verbose=False, preset="slow", audio=False, codec="h264_nvenc")
 
     # memory save
     for v in videos:
@@ -161,27 +159,24 @@ def main(argv):
     parallel_proc = argv[4]
     dynamic = argv[5]
 
-    print(f"Analysing waveform of {split(music_file_path)[1]}")
+    print(f"Analysing waveform of '{split(music_file_path)[1]}'")
     start, finish = guess_first_and_last_down_beat(music_file_path)
     duration = get_duration(music_file_path)
     intensities = get_intensities(music_file_path, bpm)
 
-    main_folder = split(split(music_file_path)[0])[0]
-    videos_path = join(main_folder, 'videos' + os.sep)
+    videos_path = join(split(split(music_file_path)[0])[0], 'videos' + os.sep)
     videos_list = preload(videos_path, resolution)
     if parallel_proc:
-        # p = Pool(processes=int(complexity)*2)
-        with LoggingPool('%(asctime)-15s (PID %(process)-5d) [%(levelname)-8s]: %(message)s', level=log.INFO,
-                         filename='import.log') as _:
-            with LoggingPool().make_pool(6) as pool:
-                for idx in range(int(complexity)):
-                    # args = music_file_path, bpm, videos_list, idx, start, finish, duration, intensities, resolution, dynamic
-                    pool.apply_async(make_sub_movie, (music_file_path, bpm, videos_list, idx, start, finish, duration, intensities, resolution, dynamic,))
-                pool.close()
-                pool.join()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=int(complexity)) as executor:
+            futures = []
+            for i in range(int(complexity)):
+                args = music_file_path, bpm, videos_list, i, start, finish, duration, intensities, resolution, dynamic
+                future = executor.submit(make_sub_movie, *args)
+                futures.append(future)
+            concurrent.futures.wait(futures)
     else:
-        for idx in range(int(complexity)):
-            args = music_file_path, bpm, videos_list, idx, start, finish, duration, intensities, resolution, dynamic
+        for i in range(int(complexity)):
+            args = music_file_path, bpm, videos_list, i, start, finish, duration, intensities, resolution, dynamic
             make_sub_movie(*args)
 
 

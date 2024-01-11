@@ -4,7 +4,6 @@ import time
 # import tqdm
 import argparse
 import pixabay.core
-import logging as log
 from pexelsapi.pexels import Pexels
 from os.path import exists, join, split, splitext
 
@@ -14,7 +13,6 @@ from make_sub_movies import main as make_sub_movies
 
 # TODO:
 # Add global progress-bar => In progress
-# Add multithread capabilities => In progress
 # Integrate AI video generation
 # different time signature support
 
@@ -24,7 +22,7 @@ generate = True
 CLI_mode = False  # if False => adjust parameters below
 
 # parameters
-complexity = '2'
+complexity = '4'
 dynamic = True
 GPU_accel = True
 output_res = '1080'
@@ -38,9 +36,9 @@ ffmpeg_cmd_codec = " -c:v h264_nvenc" if GPU_accel else ""
 ffmpeg_cmd_opt = " -hide_banner -loglevel warning -stats"
 
 # Get API_KEYS
-f = open("api_keys.txt", "r")
-pixabay_api_key = f.readline().replace('\n', '')
-pexels_api_key = f.readline().replace('\n', '')
+with open("api_keys.txt", "r") as f:
+    pixabay_api_key = f.readline().replace('\n', '')
+    pexels_api_key = f.readline().replace('\n', '')
 
 titles_queries = ['ocean']
 videos_queries = ['boat', 'mariners', 'old ship', 'sailors', 'sea']
