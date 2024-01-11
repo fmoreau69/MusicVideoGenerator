@@ -13,13 +13,16 @@ If simple_vid: Simple, randomized, tempo synced video generation
 If smart_vid: Dynamic video generation - Intense sections of music will have faster visuals
 '''
 
+GPU_accel = False
+
 HIGH_INTENSITY = [1, 1, 1, 4, 4, 4]
 MEDIUM_INTENSITY = [4, 4, 4, 4, 8, 8, 8, 16]
 LOW_INTENSITY = [8, 8, 8, 16, 16, 16, 16]
 
 
-def make_sub_movie(music_file_path: str, bpm: float, videos_list: list, idx: int,
-                   start: float, finish: float, duration: float, intensities: dict, resolution: str, dynamic: str):
+# def make_sub_movie(music_file_path: str, bpm: float, videos_list: list, idx: int,
+#                    start: float, finish: float, duration: float, intensities: dict, resolution: str, dynamic: str):
+def make_sub_movie(args):
     """
     Saves a simple or smart movie synced to the provided audio file
 
@@ -33,6 +36,9 @@ def make_sub_movie(music_file_path: str, bpm: float, videos_list: list, idx: int
     duration: total duration
     resolution (str): desired output resolution (ex: 1080 or 720)
     """
+
+    music_file_path, bpm, videos_list, idx, start, finish, duration, intensities, resolution, dynamic = (
+        args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9])
 
     song_name, _ = splitext(split(music_file_path)[1])
     project_folder = split(split(music_file_path)[0])[0]
@@ -142,8 +148,9 @@ def make_sub_movie(music_file_path: str, bpm: float, videos_list: list, idx: int
 
     # write video
     os.makedirs(temp_path, exist_ok=True)
+    codec = "h264_nvenc" if GPU_accel else "mpeg4"
     final_clip.write_videofile(filename=f"{temp_path}{song_name}_subVid{idx}.mp4", bitrate='8000000',
-                               threads=64, verbose=False, preset="slow", audio=False, codec="h264_nvenc")
+                               threads=64, verbose=False, preset="slow", audio=False, codec=codec)
 
     # memory save
     for v in videos:
@@ -171,13 +178,13 @@ def main(argv):
             futures = []
             for i in range(int(complexity)):
                 args = music_file_path, bpm, videos_list, i, start, finish, duration, intensities, resolution, dynamic
-                future = executor.submit(make_sub_movie, *args)
+                future = executor.submit(make_sub_movie, args)
                 futures.append(future)
             concurrent.futures.wait(futures)
     else:
         for i in range(int(complexity)):
             args = music_file_path, bpm, videos_list, i, start, finish, duration, intensities, resolution, dynamic
-            make_sub_movie(*args)
+            make_sub_movie(args)
 
 
 if __name__ == "__main__":

@@ -22,11 +22,11 @@ generate = True
 CLI_mode = False  # if False => adjust parameters below
 
 # parameters
-complexity = '4'
+complexity = '3'
 dynamic = True
-GPU_accel = True
+GPU_accel = False
 output_res = '1080'
-parallel_proc = True
+parallel_proc = False
 
 project_folder = 'E:\\FAB_COMPOS\\Video_songs\\Brest2008\\Clip'
 
